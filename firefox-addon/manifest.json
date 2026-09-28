@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Dashboard Draft WA Companion",
+  "version": "1.3.9",
+  "description": "Membuka satu draft WhatsApp pada Firefox Container yang dipilih pengguna.",
+  "permissions": ["contextualIdentities", "cookies", "tabs", "storage", "https://web.whatsapp.com/*"],
+  "background": { "scripts": ["background.js"], "persistent": true },
+  "content_security_policy": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:47921",
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "browser_specific_settings": { "gecko": { "id": "dashboard-draft-wa@grova.local", "strict_min_version": "142.0", "data_collection_permissions": { "required": ["none"] } } }
+}

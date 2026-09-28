@@ -1,0 +1,50 @@
+{
+  "name": "dashboard-draft-wa",
+  "version": "1.6.3",
+  "private": true,
+  "description": "Dashboard lokal untuk menyiapkan draft WhatsApp dengan Firefox Containers",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc -p tsconfig.electron.json && vite build",
+    "dist": "npm run build && electron-builder --win nsis",
+    "smoke": "npm run build && node scripts/smoke-test.cjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
+  },
+  "dependencies": {
+    "read-excel-file": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "ws": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/ws": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "cross-env": "latest",
+    "electron-builder": "latest",
+    "electron": "latest",
+    "pngjs": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "id.grova.dashboard-draft-wa",
+    "productName": "Dashboard Draft WA",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "win": { "target": ["nsis"], "icon": "build/icon.ico", "artifactName": "Dashboard-Draft-WA-Setup-${version}.${ext}" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dashboard Draft WA"
+    }
+  }
+}

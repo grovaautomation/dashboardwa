@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld("desktop", {
     saveContainers: (items: any[]) => call("setup:containers", items),
     saveContainer: (item: any) => call("setup:container", item),
   },
+  sheet: {
+    settings: () => call("sheet:settings"),
+    saveSettings: (input: any) => call("sheet:save-settings", input),
+    test: () => call("sheet:test"),
+    exportProject: (projectId: string) => call("sheet:export", projectId),
+  },
   firefox: {
     settings: () => call("firefox:settings"),
     onStatus: (listener: (settings: any) => void) => {

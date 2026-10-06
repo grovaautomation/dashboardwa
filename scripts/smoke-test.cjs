@@ -1,11 +1,16 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { zipSync, strToU8 } = require("fflate");
 const { WebSocket } = require("ws");
 const { LocalDatabase } = require("../dist-electron/electron/db.js");
 const { readExcel } = require("../dist-electron/electron/excel.js");
 const { FirefoxBridge } = require("../dist-electron/electron/bridge.js");
+const {
+  createSignedSheetRequest,
+  validateSheetEndpoint,
+} = require("../dist-electron/electron/sheetExport.js");
 
 (async () => {
   const projectRoot = path.resolve(__dirname, "..");
@@ -110,6 +115,105 @@ const { FirefoxBridge } = require("../dist-electron/electron/bridge.js");
     },
   );
   assert.equal(project.lead_count, 5);
+
+  const roundRobinContainers = [
+    ...setupContainers,
+    {
+      cookieStoreId: "firefox-container-3",
+      name: "Sales",
+      color: "red",
+      icon: "briefcase",
+      selected: true,
+      internalLabel: "Akun 3",
+    },
+  ];
+  const roundRobinRows = Array.from({ length: 9 }, (_, index) => ({
+    "Business Name": `Lead ${index + 1}`,
+    "Primary WhatsApp": `62812000000${String(index + 1).padStart(2, "0")}`,
+  }));
+  const roundRobinProject = db.createProject(
+    "Uji round-robin",
+    {
+      filePath: fixture,
+      fileName: "round-robin.xlsx",
+      sheets: ["Valid Leads"],
+      selectedSheet: "Valid Leads",
+      headers: ["Business Name", "Primary WhatsApp"],
+      suggestedMapping: {
+        business: "Business Name",
+        phone: "Primary WhatsApp",
+      },
+      rows: roundRobinRows,
+      summary: {
+        total: 9,
+        ready: 9,
+        missing: 0,
+        missingBusiness: 0,
+        duplicates: 0,
+      },
+    },
+    {
+      business: "Business Name",
+      phone: "Primary WhatsApp",
+    },
+    {
+      templateName: "Template utama",
+      templateBody: "Halo {business_name}",
+      containers: roundRobinContainers,
+      allocation: roundRobinContainers.map((container) => ({
+        containerId: container.cookieStoreId,
+        count: 3,
+      })),
+    },
+  );
+  assert.deepEqual(
+    db
+      .listLeads(roundRobinProject.id, { sort: "number" })
+      .map((lead) => lead.assigned_container_id),
+    [
+      "firefox-container-1",
+      "firefox-container-2",
+      "firefox-container-3",
+      "firefox-container-1",
+      "firefox-container-2",
+      "firefox-container-3",
+      "firefox-container-1",
+      "firefox-container-2",
+      "firefox-container-3",
+    ],
+  );
+  const groupedRoundRobinExport = db.getProjectForSheetExport(
+    roundRobinProject.id,
+  );
+  assert.deepEqual(
+    groupedRoundRobinExport.rows.map((item) => item.businessName),
+    [
+      "Lead 1",
+      "Lead 4",
+      "Lead 7",
+      "Lead 2",
+      "Lead 5",
+      "Lead 8",
+      "Lead 3",
+      "Lead 6",
+      "Lead 9",
+    ],
+  );
+  assert.deepEqual(
+    groupedRoundRobinExport.rows.map((item) => item.accountName),
+    [
+      "Akun 1",
+      "Akun 1",
+      "Akun 1",
+      "Akun 2",
+      "Akun 2",
+      "Akun 2",
+      "Akun 3",
+      "Akun 3",
+      "Akun 3",
+    ],
+  );
+
   db.saveProjectContainer(project.id, {
     ...setupContainers[0],
     internalLabel: "Akun Proyek",
@@ -125,6 +229,33 @@ const { FirefoxBridge } = require("../dist-electron/electron/bridge.js");
       (item) => item.cookieStoreId === "firefox-container-1",
     ).internalLabel,
     "Akun Proyek",
+  );
+  const sheetEndpoint =
+    "https://script.google.com/macros/s/abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789/exec";
+  const sheetSecret = "s".repeat(48);
+  assert.equal(validateSheetEndpoint(sheetEndpoint), sheetEndpoint);
+  assert.throws(() => validateSheetEndpoint("https://example.com/exec"));
+  db.saveSheetExportConfig(sheetEndpoint, sheetSecret);
+  assert.deepEqual(db.getSheetExportConfig(), {
+    endpointUrl: sheetEndpoint,
+    secret: sheetSecret,
+  });
+  const exportPayload = db.getProjectForSheetExport(project.id);
+  assert.equal(exportPayload.type, "export");
+  assert.equal(exportPayload.rows.length, 2);
+  assert.deepEqual(
+    exportPayload.rows.map((item) => item.accountName),
+    ["Akun Proyek", "Akun 2"],
+  );
+  const signed = createSignedSheetRequest(exportPayload, sheetSecret);
+  const expectedSignature = crypto
+    .createHmac("sha256", sheetSecret)
+    .update(`${signed.timestamp}.${signed.nonce}.${signed.data}`)
+    .digest("hex");
+  assert.equal(signed.signature, expectedSignature);
+  assert.deepEqual(
+    JSON.parse(Buffer.from(signed.data, "base64url").toString("utf8")),
+    JSON.parse(JSON.stringify(exportPayload)),
   );
   const summary = db.summary(project.id);
   assert.equal(summary.unprocessed, 2);

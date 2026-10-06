@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   WifiOff,
+  FileSpreadsheet,
+  Settings2,
 } from "lucide-react";
 import type {
   AppSettings,
@@ -30,6 +32,7 @@ import type {
   LeadStatus,
   MessageTemplate,
   Project,
+  SheetExportSettings,
 } from "../shared/types";
 
 type View =
@@ -235,7 +238,13 @@ function OperationalLeads({
     [openingId, setOpeningId] = useState(""),
     [notice, setNotice] = useState(""),
     [delaySeconds, setDelaySeconds] = useState(60),
-    [now, setNow] = useState(Date.now());
+    [now, setNow] = useState(Date.now()),
+    [sheetSettings, setSheetSettings] = useState<SheetExportSettings | null>(null),
+    [showSheetSettings, setShowSheetSettings] = useState(false),
+    [sheetEndpoint, setSheetEndpoint] = useState(""),
+    [sheetSecret, setSheetSecret] = useState(""),
+    [savingSheetSettings, setSavingSheetSettings] = useState(false),
+    [exportingSheet, setExportingSheet] = useState(false);
 
   const load = () =>
     Promise.all([
@@ -259,6 +268,12 @@ function OperationalLeads({
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    window.desktop.sheet.settings().then((saved) => {
+      setSheetSettings(saved);
+      setSheetEndpoint(saved.endpointUrl);
+    });
   }, []);
 
   const lastOpened = allLeads.reduce<string | null>((latest, lead) => {
@@ -304,6 +319,51 @@ function OperationalLeads({
     const minutes = Math.floor(seconds / 60);
     return `${minutes} menit ${seconds % 60} detik lalu`;
   };
+  const saveSheetSettings = async () => {
+    setSavingSheetSettings(true);
+    try {
+      const saved = await window.desktop.sheet.saveSettings({
+        endpointUrl: sheetEndpoint,
+        secret: sheetSecret || undefined,
+      });
+      setSheetSettings(saved);
+      setSheetSecret("");
+      const tested = await window.desktop.sheet.test();
+      if (!tested.ok) {
+        flash(`Pengaturan disimpan, tetapi koneksi gagal: ${tested.error}`);
+        return;
+      }
+      setShowSheetSettings(false);
+      flash("Google Sheet terhubung.");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Pengaturan gagal disimpan.");
+    } finally {
+      setSavingSheetSettings(false);
+    }
+  };
+  const exportToSheet = async () => {
+    if (!sheetSettings?.configured) {
+      setShowSheetSettings(true);
+      flash("Atur koneksi Google Sheet terlebih dahulu.");
+      return;
+    }
+    setExportingSheet(true);
+    const result = await window.desktop.sheet.exportProject(project.id);
+    setExportingSheet(false);
+    if (!result.ok) {
+      flash(result.error || "Ekspor Google Sheet gagal.");
+      return;
+    }
+    if (result.alreadyExported) {
+      flash(
+        `Proyek ini sudah diekspor ke ${result.sheetName}, baris ${result.startRow}–${result.endRow}.`,
+      );
+      return;
+    }
+    flash(
+      `${result.rowCount} lead ditambahkan ke ${result.sheetName}, baris ${result.startRow}–${result.endRow}.`,
+    );
+  };
 
   return (
     <div className="operations-page">
@@ -316,15 +376,69 @@ function OperationalLeads({
           <h1>Pembagian lead</h1>
           <p>{project.source_file_name} · {project.lead_count} lead</p>
         </div>
-        <div className={`operations-connection ${addonReady ? "connected" : ""}`}>
-          {addonReady ? <CheckCircle2 size={17} /> : <WifiOff size={17} />}
-          {addonReady
-            ? "Firefox terhubung"
-            : settings?.addonConnected
-              ? "Reload add-on"
-              : "Belum terhubung"}
+        <div className="operations-header-actions">
+          <button
+            className="primary sheet-export-button"
+            disabled={exportingSheet}
+            onClick={exportToSheet}
+          >
+            <FileSpreadsheet size={17} />
+            {exportingSheet ? "Mengekspor…" : "Export ke Google Sheet"}
+          </button>
+          <button
+            className="ghost sheet-settings-button"
+            aria-label="Atur Google Sheet"
+            title="Atur Google Sheet"
+            onClick={() => setShowSheetSettings((current) => !current)}
+          >
+            <Settings2 size={17} />
+          </button>
+          <div className={`operations-connection ${addonReady ? "connected" : ""}`}>
+            {addonReady ? <CheckCircle2 size={17} /> : <WifiOff size={17} />}
+            {addonReady
+              ? "Firefox terhubung"
+              : settings?.addonConnected
+                ? "Reload add-on"
+                : "Belum terhubung"}
+          </div>
         </div>
       </header>
+
+      {showSheetSettings && (
+        <section className="sheet-export-settings">
+          <div className="sheet-export-settings-title">
+            <div>
+              <b>Koneksi Google Sheet</b>
+              <small>Pengaturan disimpan lokal di komputer ini.</small>
+            </div>
+            <button className="ghost" onClick={() => setShowSheetSettings(false)}>Tutup</button>
+          </div>
+          <label>
+            URL Apps Script
+            <input
+              value={sheetEndpoint}
+              onChange={(event) => setSheetEndpoint(event.target.value)}
+              placeholder="https://script.google.com/macros/s/.../exec"
+            />
+          </label>
+          <label>
+            Secret
+            <input
+              type="password"
+              value={sheetSecret}
+              onChange={(event) => setSheetSecret(event.target.value)}
+              placeholder={sheetSettings?.hasSecret ? "Tersimpan — kosongkan jika tidak diubah" : "Minimal 32 karakter"}
+            />
+          </label>
+          <button
+            className="primary"
+            disabled={savingSheetSettings}
+            onClick={saveSheetSettings}
+          >
+            {savingSheetSettings ? "Menguji koneksi…" : "Simpan dan uji koneksi"}
+          </button>
+        </section>
+      )}
 
       <section className="operations-controls">
         <label className="operations-search">
@@ -426,6 +540,7 @@ function StartScreen({
     [containersCollapsed, setContainersCollapsed] = useState(false),
     [connectionWaitExpired, setConnectionWaitExpired] = useState(false),
     [loadingContainers, setLoadingContainers] = useState(false),
+    [creatingQueue, setCreatingQueue] = useState(false),
     [allocationMode, setAllocationMode] = useState<"even" | "custom">("even"),
     [quotas, setQuotas] = useState<Record<string, number>>({}),
     [notice, setNotice] = useState("");
@@ -581,7 +696,18 @@ function StartScreen({
     setMapping(p.suggestedMapping);
   };
   const create = async () => {
-    if (!preview || !name.trim() || !mapping.business || !mapping.phone) return;
+    if (!preview) {
+      setNotice("Pilih file Excel terlebih dahulu.");
+      return;
+    }
+    if (!name.trim()) {
+      setNotice("Nama proyek tidak boleh kosong.");
+      return;
+    }
+    if (!mapping.business || !mapping.phone) {
+      setNotice("Pilih kolom Business Name dan Nomor WhatsApp.");
+      return;
+    }
     if (!templateBody.trim()) {
       setNotice("Isi template terlebih dahulu.");
       return;
@@ -596,22 +722,38 @@ function StartScreen({
       );
       return;
     }
-    await Promise.all([
-      window.desktop.setup.saveTemplate(templateName, templateBody),
-      window.desktop.setup.saveContainers(containers),
-    ]);
-    const p = await window.desktop.projects.create({
-      name: name.trim(),
-      preview,
-      mapping,
-      setup: {
-        templateName,
-        templateBody,
-        containers,
-        allocation,
-      },
-    });
-    onCreated(p);
+    if (previewSummary.ready === 0) {
+      setNotice("Tidak ada lead valid untuk dibuat menjadi antrean.");
+      return;
+    }
+    setCreatingQueue(true);
+    setNotice("");
+    try {
+      await Promise.all([
+        window.desktop.setup.saveTemplate(templateName, templateBody),
+        window.desktop.setup.saveContainers(containers),
+      ]);
+      const p = await window.desktop.projects.create({
+        name: name.trim(),
+        preview,
+        mapping,
+        setup: {
+          templateName,
+          templateBody,
+          containers,
+          allocation,
+        },
+      });
+      onCreated(p);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Antrean gagal dibuat: ${error.message}`
+          : "Antrean gagal dibuat. Silakan coba lagi.",
+      );
+    } finally {
+      setCreatingQueue(false);
+    }
   };
 
   const saveTemplate = async () => {
@@ -901,10 +1043,10 @@ function StartScreen({
                     </div>
                     <button
                       className="primary create-queue"
-                      disabled={allocatedTotal !== previewSummary.ready || !templateBody.trim() || selectedContainers.length === 0 || !mapping.business || !mapping.phone}
+                      disabled={creatingQueue}
                       onClick={create}
                     >
-                      <Play size={17} /> Buat antrean
+                      <Play size={17} /> {creatingQueue ? "Membuat antrean…" : "Buat antrean"}
                     </button>
                   </div>
                 </div>

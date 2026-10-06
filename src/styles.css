@@ -2005,6 +2005,68 @@ td b {
   background: #e2f6eb;
   color: #0b7547;
 }
+.operations-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sheet-export-button,
+.sheet-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+}
+.sheet-settings-button {
+  width: 38px;
+  padding: 0;
+}
+.sheet-export-settings {
+  position: fixed;
+  z-index: 80;
+  top: 84px;
+  right: clamp(18px, 3vw, 42px);
+  width: min(480px, calc(100vw - 36px));
+  padding: 17px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(20, 45, 34, 0.2);
+}
+.sheet-export-settings-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sheet-export-settings-title div {
+  display: grid;
+  gap: 3px;
+}
+.sheet-export-settings-title small {
+  color: var(--muted);
+}
+.sheet-export-settings label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.sheet-export-settings input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #f8faf9;
+  font: inherit;
+}
 .operations-controls {
   width: 100%;
   max-width: 100%;
@@ -2224,9 +2286,16 @@ td b {
   .operations-header {
     grid-template-columns: auto 1fr;
   }
-  .operations-connection {
+  .operations-header-actions {
     grid-column: 1 / -1;
-    justify-self: start;
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+  .operations-header-actions .sheet-export-button {
+    flex: 1;
+  }
+  .operations-connection {
+    justify-content: center;
   }
   .operations-timing,
   .operational-lead {
@@ -2389,12 +2458,18 @@ td b {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px;
   }
-  .operations-connection {
+  .operations-header-actions {
     grid-column: 1 / -1;
-    justify-self: stretch;
-    justify-content: center;
+    width: 100%;
+  }
+  .operations-connection {
     border-radius: 8px;
     padding-block: 6px;
+  }
+  .sheet-export-settings {
+    top: 132px;
+    right: 12px;
+    width: calc(100vw - 24px);
   }
   .operations-controls {
     display: grid;

@@ -85,6 +85,22 @@ export interface AppSettings {
   firefoxAvailable: boolean;
 }
 
+export interface SheetExportSettings {
+  endpointUrl: string;
+  configured: boolean;
+  hasSecret: boolean;
+}
+
+export interface SheetExportResult {
+  ok: boolean;
+  alreadyExported?: boolean;
+  sheetName?: string;
+  rowCount?: number;
+  startRow?: number;
+  endRow?: number;
+  error?: string;
+}
+
 export interface SetupPreferences {
   templateName: string;
   templateBody: string;
@@ -140,6 +156,15 @@ export interface DesktopApi {
     saveTemplate(name: string, body: string): Promise<void>;
     saveContainers(items: FirefoxContainer[]): Promise<void>;
     saveContainer(item: FirefoxContainer): Promise<void>;
+  };
+  sheet: {
+    settings(): Promise<SheetExportSettings>;
+    saveSettings(input: {
+      endpointUrl: string;
+      secret?: string;
+    }): Promise<SheetExportSettings>;
+    test(): Promise<{ ok: boolean; error?: string }>;
+    exportProject(projectId: string): Promise<SheetExportResult>;
   };
   firefox: {
     settings(): Promise<AppSettings>;

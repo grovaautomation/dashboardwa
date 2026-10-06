@@ -136,16 +136,31 @@ export class LocalDatabase {
           const assign = this.db.prepare(
             "UPDATE leads SET assigned_container_id=?, updated_at=? WHERE id=?",
           );
-          let cursor = 0;
-          setup.allocation.forEach(({ containerId, count }) => {
+          const remainingAllocation = setup.allocation.map(
+            ({ containerId, count }) => ({
+              containerId,
+              remaining: Math.max(0, Math.floor(count)),
+            }),
+          );
+          let allocationCursor = 0;
+          for (const leadId of readyLeadIds) {
+            let assigned = false;
             for (
-              let index = 0;
-              index < count && cursor < readyLeadIds.length;
-              index++
+              let attempt = 0;
+              attempt < remainingAllocation.length;
+              attempt++
             ) {
-              assign.run(containerId, now, readyLeadIds[cursor++]);
+              const allocation = remainingAllocation[allocationCursor];
+              allocationCursor =
+                (allocationCursor + 1) % remainingAllocation.length;
+              if (allocation.remaining === 0) continue;
+              assign.run(allocation.containerId, now, leadId);
+              allocation.remaining--;
+              assigned = true;
+              break;
             }
-          });
+            if (!assigned) break;
+          }
         }
       });
     run();
@@ -173,6 +188,59 @@ export class LocalDatabase {
         normalizeTemplate(values.template_body) ||
         "Halo, selamat siang {business_name}. Saya Putra dari Grova...",
       containers,
+    };
+  }
+  getSheetExportConfig() {
+    const rows = this.db
+      .prepare(
+        "SELECT key,value FROM app_settings WHERE key IN ('sheet_export_url','sheet_export_secret')",
+      )
+      .all() as Array<{ key: string; value: string }>;
+    const values = Object.fromEntries(rows.map((item) => [item.key, item.value]));
+    return {
+      endpointUrl: values.sheet_export_url || "",
+      secret: values.sheet_export_secret || "",
+    };
+  }
+  saveSheetExportConfig(endpointUrl: string, secret?: string) {
+    const statement = this.db.prepare(
+      "INSERT INTO app_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    );
+    this.transaction(() => {
+      statement.run("sheet_export_url", endpointUrl.trim());
+      if (secret?.trim()) statement.run("sheet_export_secret", secret.trim());
+    });
+    return this.getSheetExportConfig();
+  }
+  getProjectForSheetExport(projectId: string) {
+    const project = this.db
+      .prepare("SELECT id,name,created_at FROM projects WHERE id=?")
+      .get(projectId) as
+      | { id: string; name: string; created_at: string }
+      | undefined;
+    if (!project) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT l.business_name businessName,l.phone_normalized phone,COALESCE(NULLIF(c.internal_label,''),c.display_name) accountName
+         FROM leads l
+         JOIN containers c ON c.project_id=l.project_id AND c.cookie_store_id=l.assigned_container_id
+         WHERE l.project_id=? AND l.status!='needs_fix' AND l.phone_normalized IS NOT NULL
+         ORDER BY (
+           SELECT MIN(l2.source_row_number)
+           FROM leads l2
+           WHERE l2.project_id=l.project_id
+             AND l2.assigned_container_id=l.assigned_container_id
+             AND l2.status!='needs_fix'
+             AND l2.phone_normalized IS NOT NULL
+         ), l.source_row_number`,
+      )
+      .all(projectId);
+    return {
+      type: "export",
+      projectId: project.id,
+      projectName: project.name,
+      createdAt: project.created_at,
+      rows,
     };
   }
   saveSetupTemplate(name: string, body: string) {

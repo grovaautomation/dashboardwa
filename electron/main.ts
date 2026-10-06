@@ -4,6 +4,7 @@ import fs from "fs";
 import { LocalDatabase } from "./db";
 import { readExcel } from "./excel";
 import { FirefoxBridge } from "./bridge";
+import { sendSheetRequest, validateSheetEndpoint } from "./sheetExport";
 let win: BrowserWindow | null = null,
   db: LocalDatabase,
   bridge: FirefoxBridge;
@@ -120,6 +121,56 @@ function registerIpc() {
   ipcMain.handle("setup:container", (_, item) =>
     db.saveSetupContainer(item),
   );
+  ipcMain.handle("sheet:settings", () => {
+    const config = db.getSheetExportConfig();
+    return {
+      endpointUrl: config.endpointUrl,
+      configured: !!config.endpointUrl && !!config.secret,
+      hasSecret: !!config.secret,
+    };
+  });
+  ipcMain.handle("sheet:save-settings", (_, input) => {
+    const endpointUrl = validateSheetEndpoint(String(input?.endpointUrl || ""));
+    const current = db.getSheetExportConfig();
+    const secret = String(input?.secret || "").trim() || current.secret;
+    if (secret.length < 32)
+      throw new Error("Secret Google Sheet minimal 32 karakter");
+    const saved = db.saveSheetExportConfig(endpointUrl, secret);
+    return {
+      endpointUrl: saved.endpointUrl,
+      configured: true,
+      hasSecret: true,
+    };
+  });
+  ipcMain.handle("sheet:test", async () => {
+    try {
+      const config = db.getSheetExportConfig();
+      await sendSheetRequest(config.endpointUrl, config.secret, {
+        type: "ping",
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Koneksi gagal",
+      };
+    }
+  });
+  ipcMain.handle("sheet:export", async (_, projectId) => {
+    try {
+      const config = db.getSheetExportConfig();
+      const payload = db.getProjectForSheetExport(projectId);
+      if (!payload) return { ok: false, error: "Proyek tidak ditemukan" };
+      if (payload.rows.length === 0)
+        return { ok: false, error: "Tidak ada lead valid yang dapat diekspor" };
+      return await sendSheetRequest(config.endpointUrl, config.secret, payload);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Ekspor gagal",
+      };
+    }
+  });
   ipcMain.handle("firefox:settings", firefoxSettings);
   ipcMain.handle("firefox:open", async (_, id) => {
     const lead = db.getLeadForOpen(id);
